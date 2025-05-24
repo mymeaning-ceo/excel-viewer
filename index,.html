@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>엑셀 데이터를 IndexedDB에 저장하고 웹에서 표시하기</title>
+  <title>excel-viewer</title>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; }
@@ -44,7 +44,14 @@
       const workbook = XLSX.read(data, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const json = XLSX.utils.sheet_to_json(sheet);
+
+      // ✅ 숫자 정밀도와 빈 셀 유지
+      const json = XLSX.utils.sheet_to_json(sheet, {
+        raw: false,
+        defval: ""
+      });
+
+      console.log(json); // 디버깅용
       saveToIndexedDB(json);
     };
     reader.readAsArrayBuffer(file);
@@ -62,7 +69,7 @@
     };
   }
 
-  // 4. IndexedDB에서 가져오기
+  // 4. IndexedDB에서 불러오기
   function displayData() {
     const tx = db.transaction("excelData", "readonly");
     const store = tx.objectStore("excelData");
@@ -73,7 +80,7 @@
     };
   }
 
-  // 5. HTML 테이블로 출력
+  // 5. HTML 테이블로 표시
   function renderTable(data) {
     if (!data || data.length === 0) {
       document.getElementById('output').innerHTML = "<p>표시할 데이터가 없습니다.</p>";
