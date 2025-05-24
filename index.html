@@ -1,0 +1,130 @@
+
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>excel-viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background-color: #f0f0f0; }
+    #searchInput { margin-top: 10px; padding: 5px; width: 50%; }
+    button { margin: 5px 0; padding: 6px 12px; }
+  </style>
+</head>
+<body>
+
+<h2>엑셀 파일 업로드</h2>
+<input type="file" id="excelInput" accept=".xlsx, .xls">
+<br>
+<input type="text" id="searchInput" placeholder="검색어 입력...">
+<br>
+<button onclick="downloadExcel()">📥 엑셀 다운로드</button>
+<button onclick="clearData()">🗑️ 데이터 전체 삭제</button>
+
+<div id="output"></div>
+
+<script>
+  let db;
+  let originalData = [];
+  const dbName = "ExcelDB";
+
+  const request = indexedDB.open(dbName, 1);
+  request.onupgradeneeded = function (e) {
+    db = e.target.result;
+    if (!db.objectStoreNames.contains("excelData")) {
+      db.createObjectStore("excelData", { keyPath: "id", autoIncrement: true });
+    }
+  };
+  request.onsuccess = function (e) {
+    db = e.target.result;
+    displayData();
+  };
+
+  document.getElementById('excelInput').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (evt) {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "" });
+      saveToIndexedDB(json);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  function saveToIndexedDB(data) {
+    const tx = db.transaction("excelData", "readwrite");
+    const store = tx.objectStore("excelData");
+    store.clear();
+    data.forEach(row => store.add({ row }));
+    tx.oncomplete = () => {
+      alert('데이터 저장 완료!');
+      displayData();
+    };
+  }
+
+  function displayData() {
+    const tx = db.transaction("excelData", "readonly");
+    const store = tx.objectStore("excelData");
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const rows = req.result.map(r => r.row);
+      originalData = rows;
+      renderTable(rows);
+    };
+  }
+
+  document.getElementById('searchInput').addEventListener('input', function (e) {
+    const keyword = e.target.value.toLowerCase();
+    const filtered = originalData.filter(row =>
+      Object.values(row).some(val =>
+        val.toString().toLowerCase().includes(keyword)
+      )
+    );
+    renderTable(filtered);
+  });
+
+  function renderTable(data) {
+    if (!data || data.length === 0) {
+      document.getElementById('output').innerHTML = "<p>표시할 데이터가 없습니다.</p>";
+      return;
+    }
+    let html = "<table><thead><tr>";
+    Object.keys(data[0]).forEach(key => html += `<th>${key}</th>`);
+    html += "</tr></thead><tbody>";
+    data.forEach(row => {
+      html += "<tr>";
+      Object.values(row).forEach(val => html += `<td>${val}</td>`);
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    document.getElementById('output').innerHTML = html;
+  }
+
+  function clearData() {
+    const tx = db.transaction("excelData", "readwrite");
+    const store = tx.objectStore("excelData");
+    store.clear();
+    tx.oncomplete = () => {
+      alert("데이터가 삭제되었습니다.");
+      displayData();
+    };
+  }
+
+  function downloadExcel() {
+    if (!originalData.length) return alert("데이터가 없습니다.");
+    const ws = XLSX.utils.json_to_sheet(originalData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+    XLSX.writeFile(wb, "다운로드.xlsx");
+  }
+</script>
+
+</body>
+</html>
