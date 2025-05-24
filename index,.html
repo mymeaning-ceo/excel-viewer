@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>엑셀 데이터를 IndexedDB에 저장하고 웹에서 표시하기</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background-color: #f0f0f0; }
+  </style>
+</head>
+<body>
+
+<h2>엑셀 파일 업로드</h2>
+<input type="file" id="excelInput" accept=".xlsx, .xls">
+<div id="output"></div>
+
+<script>
+  let db;
+  const dbName = "ExcelDB";
+
+  // 1. IndexedDB 초기화
+  const request = indexedDB.open(dbName, 1);
+  request.onupgradeneeded = function (e) {
+    db = e.target.result;
+    if (!db.objectStoreNames.contains("excelData")) {
+      db.createObjectStore("excelData", { keyPath: "id", autoIncrement: true });
+    }
+  };
+  request.onsuccess = function (e) {
+    db = e.target.result;
+    displayData(); // 초기 로딩 시 표시
+  };
+
+  // 2. 엑셀 파일 업로드 및 파싱
+  document.getElementById('excelInput').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (evt) {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(sheet);
+      saveToIndexedDB(json);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // 3. IndexedDB에 저장
+  function saveToIndexedDB(data) {
+    const tx = db.transaction("excelData", "readwrite");
+    const store = tx.objectStore("excelData");
+    store.clear(); // 기존 데이터 삭제
+    data.forEach(row => store.add({ row }));
+    tx.oncomplete = () => {
+      alert('데이터 저장 완료!');
+      displayData();
+    };
+  }
+
+  // 4. IndexedDB에서 가져오기
+  function displayData() {
+    const tx = db.transaction("excelData", "readonly");
+    const store = tx.objectStore("excelData");
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const rows = req.result.map(r => r.row);
+      renderTable(rows);
+    };
+  }
+
+  // 5. HTML 테이블로 출력
+  function renderTable(data) {
+    if (!data || data.length === 0) {
+      document.getElementById('output').innerHTML = "<p>표시할 데이터가 없습니다.</p>";
+      return;
+    }
+
+    let html = "<table><thead><tr>";
+    Object.keys(data[0]).forEach(key => html += `<th>${key}</th>`);
+    html += "</tr></thead><tbody>";
+    data.forEach(row => {
+      html += "<tr>";
+      Object.values(row).forEach(val => html += `<td>${val}</td>`);
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    document.getElementById('output').innerHTML = html;
+  }
+</script>
+
+</body>
+</html>
